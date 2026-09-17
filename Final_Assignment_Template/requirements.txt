@@ -1,0 +1,5 @@
+gradio
+requests
+gradio[oauth]
+ddgs
+smolagents[litellm]
