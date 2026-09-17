@@ -28,9 +28,23 @@ and posts the result to the course scorer.
 4. Open the Space, sign in with the Hugging Face login button, and select **Solve and
    submit all questions**.
 
-`SPACE_ID` is supplied by Hugging Face in a deployed Space and is used only to submit
-the public `.../tree/main` code URL. The app refuses a submission outside a Space, so
-the leaderboard always receives a verifiable public code link.
+`SPACE_ID` is supplied by Hugging Face in a deployed Space and is used to submit the
+public `.../tree/main` code URL.
+
+## Run locally
+
+Local runs do not require Gradio OAuth. Set `HF_TOKEN` in your shell or `.env` for
+inference, then start the application:
+
+```bash
+python3 -m pip install --user -r requirements.txt
+export HF_TOKEN=hf_your_new_token
+python3 app.py
+```
+
+The local interface asks for a username instead of displaying the Hugging Face login
+button. To submit from this checkout, also set `AGENT_CODE_URL` to the public Hugging
+Face Space `.../tree/main` URL; otherwise, deploy the Space and submit there.
 
 ## Safety and behavior
 

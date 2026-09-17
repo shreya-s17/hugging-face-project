@@ -262,17 +262,24 @@ capitalization, punctuation, and numeric precision."""
 
 
 def agent_code_url() -> str:
+    configured_url = os.getenv("AGENT_CODE_URL", "").strip()
+    if configured_url:
+        return configured_url
     space_id = os.getenv("SPACE_ID", "").strip()
     if not space_id:
         raise RuntimeError(
-            "SPACE_ID is unavailable. Deploy this app in a Hugging Face Space before submitting."
+            "SPACE_ID is unavailable. Set AGENT_CODE_URL to the public Space code URL "
+            "when submitting from a local checkout."
         )
     return f"https://huggingface.co/spaces/{space_id}/tree/main"
 
 
-def evaluate(profile: gr.OAuthProfile | None, progress=gr.Progress()) -> tuple[str, list[list[str]]]:
-    if not profile or not profile.username:
-        return "Please sign in with Hugging Face before running the evaluation.", []
+def run_evaluation(
+    username: str, progress=gr.Progress()
+) -> tuple[str, list[list[str]]]:
+    username = username.strip()
+    if not username:
+        return "Enter your Hugging Face username before running the evaluation.", []
     try:
         tasks = fetch_tasks()
         agent = build_agent()
@@ -299,7 +306,7 @@ def evaluate(profile: gr.OAuthProfile | None, progress=gr.Progress()) -> tuple[s
     try:
         response = requests.post(
             api_url("/submit"),
-            json={"username": profile.username.strip(), "agent_code": code_url, "answers": answers},
+            json={"username": username, "agent_code": code_url, "answers": answers},
             timeout=60,
         )
         if not response.ok:
@@ -307,7 +314,7 @@ def evaluate(profile: gr.OAuthProfile | None, progress=gr.Progress()) -> tuple[s
         result = response.json()
         progress(1, desc="Complete")
         return (
-            f"Submitted {len(answers)} answers for {result.get('username', profile.username)}. "
+            f"Submitted {len(answers)} answers for {result.get('username', username)}. "
             f"Score: {result.get('score', 'N/A')}% "
             f"({result.get('correct_count', '?')}/{result.get('total_attempted', '?')} correct). "
             f"{result.get('message', '')}",
@@ -316,6 +323,12 @@ def evaluate(profile: gr.OAuthProfile | None, progress=gr.Progress()) -> tuple[s
     except requests.RequestException as error:
         LOGGER.exception("Submission failed")
         return f"Submission failed: {error}", rows
+
+
+def evaluate(profile: gr.OAuthProfile | None, progress=gr.Progress()) -> tuple[str, list[list[str]]]:
+    if not profile or not profile.username:
+        return "Please sign in with Hugging Face before running the evaluation.", []
+    return run_evaluation(profile.username, progress)
 
 
 def preview_random_question() -> str:
@@ -339,7 +352,14 @@ only after they have all been generated."""
         )
         random_button = gr.Button("Preview a random course question")
         random_question = gr.Markdown()
-        gr.LoginButton()
+        deployed_in_space = bool(os.getenv("SPACE_ID"))
+        if deployed_in_space:
+            gr.LoginButton()
+        else:
+            local_username = gr.Textbox(
+                label="Hugging Face username",
+                placeholder="Required only if you submit from this local checkout",
+            )
         run_button = gr.Button("Solve and submit all questions", variant="primary")
         status = gr.Textbox(label="Evaluation status", lines=4, interactive=False)
         results = gr.Dataframe(
@@ -349,7 +369,10 @@ only after they have all been generated."""
             wrap=True,
         )
         random_button.click(preview_random_question, outputs=random_question)
-        run_button.click(evaluate, outputs=[status, results])
+        if deployed_in_space:
+            run_button.click(evaluate, outputs=[status, results])
+        else:
+            run_button.click(run_evaluation, inputs=local_username, outputs=[status, results])
     return demo
 
 
