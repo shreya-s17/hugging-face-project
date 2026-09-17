@@ -17,7 +17,10 @@ from urllib.parse import quote, urlparse
 import gradio as gr
 import requests
 from bs4 import BeautifulSoup
+from dotenv import load_dotenv
 from smolagents import CodeAgent, DuckDuckGoSearchTool, InferenceClientModel, tool
+
+load_dotenv(Path(__file__).with_name(".env"))
 
 SCORING_API_URL = "https://agents-course-unit4-scoring.hf.space"
 REQUEST_TIMEOUT_SECONDS = 30

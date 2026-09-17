@@ -33,23 +33,30 @@ public `.../tree/main` code URL.
 
 ## Run locally
 
-Local runs do not require Gradio OAuth. Set `HF_TOKEN` in your shell or `.env` for
-inference, then start the application:
+Local runs do not require Gradio OAuth. Create `Final_Assignment_Template/.env`
+(already ignored by Git) and add a newly generated token:
+
+```bash
+HF_TOKEN=hf_your_new_token
+```
+
+The application loads that file on startup, so no editor terminal setting is required.
+Then install dependencies and start the application:
 
 ```bash
 python3 -m pip install --user -r requirements.txt
-export HF_TOKEN=hf_your_new_token
 python3 app.py
 ```
 
 The local interface asks for a username instead of displaying the Hugging Face login
-button. To submit from this checkout, also set `AGENT_CODE_URL` to the public Hugging
-Face Space `.../tree/main` URL; otherwise, deploy the Space and submit there.
+button. To submit from this checkout, add `AGENT_CODE_URL` with the public Hugging Face
+Space `.../tree/main` URL to the same `.env` file; otherwise, deploy the Space and
+submit there.
 
 ## Safety and behavior
 
-- `HF_TOKEN` is read only from the Space secret and is never rendered, logged, or
-  included in a tool result.
+- `HF_TOKEN` is read only from a Space secret or Git-ignored local `.env` file and is
+  never rendered, logged, or included in a tool result.
 - The file tool can access only the attachment for the task being solved, enforces a
   25 MB limit, and saves non-text files in a private temporary directory.
 - The web-page tool accepts only public HTTP(S) URLs, blocks loopback hosts, and limits
