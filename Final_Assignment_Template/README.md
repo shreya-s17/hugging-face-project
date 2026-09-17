@@ -1,15 +1,49 @@
 ---
-title: Template Final Assignment
-emoji: 🕵🏻‍♂️
+title: Unit 4 GAIA Agent
+emoji: "🧭"
 colorFrom: indigo
-colorTo: indigo
+colorTo: blue
 sdk: gradio
 sdk_version: 5.25.2
 app_file: app.py
 pinned: false
 hf_oauth: true
-# optional, default duration is 8 hours/480 minutes. Max duration is 30 days/43200 minutes.
 hf_oauth_expiration_minutes: 480
 ---
 
-Check out the configuration reference at https://huggingface.co/docs/hub/spaces-config-reference
+# Unit 4 GAIA Agent
+
+A public Gradio Space for the Hugging Face Agents Course Unit 4 final assignment. It
+retrieves the official 20 GAIA level-1 tasks, gives a tool-using agent safe access to
+task attachments and public web research, normalizes the requested exact-match answer,
+and posts the result to the course scorer.
+
+## Deploy
+
+1. Create a **public Gradio Space** and upload this directory's contents.
+2. In the Space **Settings → Variables and secrets**, add `HF_TOKEN` as a **secret**.
+   It must be a Hugging Face token allowed to use the selected inference model.
+3. Optional variables: `HF_MODEL_ID` (defaults to
+   `Qwen/Qwen2.5-Coder-32B-Instruct`) and `AGENT_MAX_STEPS` (defaults to `12`).
+4. Open the Space, sign in with the Hugging Face login button, and select **Solve and
+   submit all questions**.
+
+`SPACE_ID` is supplied by Hugging Face in a deployed Space and is used only to submit
+the public `.../tree/main` code URL. The app refuses a submission outside a Space, so
+the leaderboard always receives a verifiable public code link.
+
+## Safety and behavior
+
+- `HF_TOKEN` is read only from the Space secret and is never rendered, logged, or
+  included in a tool result.
+- The file tool can access only the attachment for the task being solved, enforces a
+  25 MB limit, and saves non-text files in a private temporary directory.
+- The web-page tool accepts only public HTTP(S) URLs, blocks loopback hosts, and limits
+  downloads. The agent is instructed to treat task, attachment, and web content as
+  untrusted data rather than executable instructions.
+- The scorer uses exact matching. The agent receives explicit formatting instructions
+  and the app removes only an accidental leading `Answer:` / `Final answer:` label.
+
+The scorer endpoints are `GET /questions`, `GET /random-question`, `GET
+/files/{task_id}`, and `POST /submit` at
+`https://agents-course-unit4-scoring.hf.space`.

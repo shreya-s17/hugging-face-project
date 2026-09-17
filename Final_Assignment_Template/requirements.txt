@@ -1,5 +1,5 @@
-gradio
-requests
-gradio[oauth]
+beautifulsoup4
 ddgs
-smolagents[litellm]
+gradio[oauth]>=5.25
+requests>=2.31
+smolagents>=1.13
