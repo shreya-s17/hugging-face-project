@@ -1,5 +1,15 @@
 gradio
 requests
+tenacity
 gradio[oauth]
 ddgs
 smolagents[litellm]
+requests
+pandas
+numpy
+beautifulsoup4
+pdfplumber
+openpyxl
+openai-whisper
+pillow
+youtube-transcript-api

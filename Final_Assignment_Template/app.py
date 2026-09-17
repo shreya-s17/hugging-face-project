@@ -4,12 +4,63 @@ import requests
 import inspect
 import pandas as pd
 from huggingface_hub import login
-login()
+from soupsieve import match
 
-from smolagents import CodeAgent, LiteLLMModel, DuckDuckGoSearchTool, HfApiModel
+from smolagents import CodeAgent, LiteLLMModel, DuckDuckGoSearchTool, HfApiModel, VisitWebpageTool
 
+from smolagents import tool
 
+@tool
+def safe_web_search(query: str) -> str:
+    """Searches the web safely with fallback queries if DuckDuckGo fails.
+    
+    Args:
+        query: The search keywords (keep concise, 1-3 words).
+    """
+    search = DuckDuckGoSearchTool()
+    
+    # Clean query to basic keywords
+    keywords = " ".join(query.split()[:3])
+    
+    try:
+        return search(keywords)
+    except Exception:
+        # Fallback to even simpler query
+        try:
+            simple_query = query.split()[0]
+            return search(simple_query)
+        except Exception as e:
+            return f"Search failed: {e}. Please use alternative search terms or visit direct URLs."
 
+import pandas as pd
+import whisper
+
+@tool
+def transcribe_audio(file_path: str) -> str:
+    """Transcribes local audio files (.mp3, .wav) to text using Whisper.
+    
+    Args:
+        file_path: The path or name of the audio file.
+    """
+    try:
+        model = whisper.load_model("tiny")
+        result = model.transcribe(file_path)
+        return result["text"]
+    except Exception as e:
+        return f"Audio transcription error: {e}"
+
+@tool
+def read_excel_file(file_path: str) -> str:
+    """Reads an Excel spreadsheet file into a text/pandas representation.
+    
+    Args:
+        file_path: Path to the .xlsx or .xls file.
+    """
+    try:
+        df = pd.read_excel(file_path)
+        return df.to_string()
+    except Exception as e:
+        return f"Excel reading error: {e}"
 
 # (Keep Constants as is)
 # --- Constants ---
@@ -47,19 +98,25 @@ def run_and_submit_all( profile: gr.OAuthProfile | None):
 
     # Initializing with native tools + web search
     search_tool = DuckDuckGoSearchTool()
+    visit_tool = VisitWebpageTool()
+
 
     # Upgrading to a powerful model like Gemini 2.5 Flash, Claude 3.5 Sonnet, or GPT-4o
-    # model = LiteLLMModel(
-    #     model_id="gemini/gemini-3.6-flash", # Highly popular for this benchmark due to cost & performance
-    #     api_key=os.getenv("GEMINI_API_KEY")
-    # )
+    model = LiteLLMModel(
+        model_id="gemini/gemini-3.6-flash", # Highly popular for this benchmark due to cost & performance
+        api_key=os.getenv("GEMINI_API_KEY"),
+        num_retries=5,       # Automatically retries on 503/429 errors
+        retry_min_wait=2,
+        retry_max_wait=10
+    )
 
-    # agent = CodeAgent(
-    #     tools=[search_tool],
-    #     model=model,
-    #     max_steps=8, # Gives the agent plenty of reasoning/retry cycles
-    #     additional_authorized_imports=["math", "datetime", "re", "json"] # Authorize code libraries for calculations
-    # )
+    agent = CodeAgent(
+        tools=[search_tool, visit_tool, safe_web_search, transcribe_audio, read_excel_file],
+        model=model,
+        max_steps=1, # Gives the agent plenty of reasoning/retry cycles
+        additional_authorized_imports=["math", "datetime", "re", "json", "collections", 
+        "pandas", "numpy", "bs4", "requests", "PIL", "pdfplumber", "whisper"] # Authorize code libraries for calculations
+    )
 
     # Uses Hugging Face's internal serverless architecture
     model_hf = HfApiModel(
@@ -77,10 +134,11 @@ def run_and_submit_all( profile: gr.OAuthProfile | None):
     3. If the answer is a word, number, or short text string, pass ONLY that raw string directly to final_answer().
     """
 
-    agent_hf = CodeAgent(tools=[search_tool], model=model_hf, 
-        max_steps=12,
+    agent_hf = CodeAgent(tools=[search_tool], model=model_hf, #web_visit_tool
+        max_steps=2,
         additional_authorized_imports=["math",
             "datetime",
+            "math",
             "re",
             "json",
             "collections",
@@ -91,12 +149,14 @@ def run_and_submit_all( profile: gr.OAuthProfile | None):
             "pdfplumber",
             "openpyxl",
             "whisper",
-            "PIL",]
+            "PIL",
+            "bs4"
+            ]
     )
 
     # 1. Instantiate Agent ( modify this part to create your agent)
     try:
-        agent = agent_hf # Use the Hugging Face model agent for this example
+        agent = agent # Use the Hugging Face model agent for this example
     except Exception as e:
         print(f"Error instantiating agent: {e}")
         return f"Error initializing agent: {e}", None
@@ -125,6 +185,48 @@ def run_and_submit_all( profile: gr.OAuthProfile | None):
         print(f"An unexpected error occurred fetching questions: {e}")
         return f"An unexpected error occurred fetching questions: {e}", None
 
+    import re
+
+    def clean_gaia_answer(answer: str) -> str:
+        """Strips conversational wrappers and formats exact match answers."""
+        if not isinstance(answer, str):
+            answer = str(answer)
+        
+        answer = str(answer).strip()
+
+        # Robust regex to extract inner content regardless of whitespace or quotes
+        match = re.search(r"final_answer\s*\(\s*(?:answer\s*=\s*)?(['\"]?)(.*?)\1\s*\)\s*$", answer, re.DOTALL)
+        if match:
+            answer = match.group(2).strip()
+        else:
+            # Fallback: simple string splitting if regex fails
+            if "final_answer(" in answer:
+                answer = answer.split("final_answer(", 1)[1].rstrip(")").strip()
+                if answer.startswith("answer="):
+                    answer = answer[7:].strip()
+        
+        # Strip final_answer wrapper if left as raw code text
+        match = re.search(r"final_answer\((?:answer=)?['\"]?(.*?)['\"]?\)$", answer, re.DOTALL)
+        if match:
+            answer = match.group(1).strip()
+            
+        # Strip markdown code fencing
+        answer = re.sub(r"^```[a-zA-Z]*\n?|\n?```$", "", answer).strip()
+
+            # 3. Clean trailing code junk like `")`, `")`, `"]`, etc.
+        answer = re.sub(r'[\"\']+\)\`*$', '', answer).strip()
+        answer = re.sub(r'^\`*[\"\']+', '', answer).strip()
+
+        # 4. Strip single/double outer quotes
+        if (answer.startswith('"') and answer.endswith('"')) or (answer.startswith("'") and answer.endswith("'")):
+            answer = answer[1:-1].strip()
+        
+        # Remove outer quotes
+        if (answer.startswith('"') and answer.endswith('"')) or (answer.startswith("'") and answer.endswith("'")):
+            answer = answer[1:-1].strip()
+            
+        return answer
+
     # 3. Run your Agent
     results_log = []
     answers_payload = []
@@ -133,17 +235,29 @@ def run_and_submit_all( profile: gr.OAuthProfile | None):
         task_id = item.get("task_id")
         question_text = item.get("question")
         # Append prompt instructions directly to the task query
-        final_query = (
+        # final_query = (
+        #     f"{question_text}\n\n"
+        #     "CRITICAL FORMATTING INSTRUCTIONS:\n"
+        #     "- Call final_answer(answer=...) with ONLY the exact, raw answer string.\n"
+        #     "- DO NOT format the answer as a dictionary, JSON, markdown section, or key-value pair."
+        # )
+        
+        prompt = (
             f"{question_text}\n\n"
-            "CRITICAL FORMATTING INSTRUCTIONS:\n"
-            "- Call final_answer(answer=...) with ONLY the exact, raw answer string.\n"
-            "- DO NOT format the answer as a dictionary, JSON, markdown section, or key-value pair."
+            "STRICT INSTRUCTIONS:\n"
+            "1. Use `visit_webpage(url)` for URLs, `web_search(keywords)` ONLY for keyword queries.\n"
+            "2. For Excel/CSV/Audio, process them via Python code blocks (`pandas`, `whisper`).\n"
+            "3. Output ONLY the raw final value (no explanations, no punctuation) inside `final_answer(answer=...)`.\n"
+            "4. Execute Python code to retrieve or compute data. Do NOT return Python code snippets as your final answer.\n"
+            "5. For comma-separated lists, do NOT put spaces after commas (e.g., return `b,e`, NOT `b, e`).\n"
+            "6. Call `final_answer(answer=...)` with ONLY the exact string/numeric value as soon as derived."
         )
         if not task_id or question_text is None:
             print(f"Skipping item with missing task_id or question: {item}")
             continue
         try:
-            submitted_answer = agent.run(final_query)
+            submitted_answer = agent.run(prompt)
+            submitted_answer = clean_gaia_answer(submitted_answer)
             answers_payload.append({"task_id": task_id, "submitted_answer": submitted_answer})
             results_log.append({"Task ID": task_id, "Question": question_text, "Submitted Answer": submitted_answer})
         except Exception as e:
